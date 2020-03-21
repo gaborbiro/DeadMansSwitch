@@ -29,14 +29,14 @@
             tools:text="Ringer mode is normal" />
     </ScrollView>
 
-    <Button
+    <androidx.appcompat.widget.AppCompatButton
         android:id="@+id/button_dead_mans_switch"
+        style="@style/Widget.AppCompat.Button.Colored"
         android:layout_width="360dp"
         android:layout_height="240dp"
         android:layout_marginBottom="@dimen/dimen_double_16"
-        android:background="@drawable/btn_background_selector"
-        android:enabled="false"
-        android:text="Press to arm button\nRelease to mute\nDrag outside to cancel"
+        android:background="@drawable/btn_background_ripple"
+        android:text="Press to arm\nRelease to mute\nDrag outside to cancel"
         android:textColor="@android:color/white"
         android:textSize="20sp"
         app:layout_constraintBottom_toBottomOf="parent"
