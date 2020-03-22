@@ -6,6 +6,15 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
+    <androidx.appcompat.widget.AppCompatSpinner
+        android:id="@+id/spinner_device_selector"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/dimen_normal_8"
+        tools:listitem="@android:layout/simple_spinner_item"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <ScrollView
         android:layout_width="0dp"
         android:layout_height="0dp"
@@ -15,10 +24,10 @@
         app:layout_constraintBottom_toTopOf="@id/button_dead_mans_switch"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        app:layout_constraintTop_toBottomOf="@id/spinner_device_selector">
 
         <TextView
-            android:id="@+id/label_cast_device"
+            android:id="@+id/text_log"
             style="@style/AudioStatusLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

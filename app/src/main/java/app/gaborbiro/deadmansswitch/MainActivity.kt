@@ -3,12 +3,12 @@ package app.gaborbiro.deadmansswitch
 import android.annotation.SuppressLint
 import android.app.NotificationManager
 import android.content.Intent
-import android.graphics.Rect
 import android.os.Bundle
 import android.provider.Settings
 import android.view.MotionEvent
 import android.view.View
-import android.widget.Toast
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
@@ -23,27 +23,22 @@ import java.util.*
 class MainActivity : AppCompatActivity() {
 
     private lateinit var mediaRouter: MediaRouter
-    private lateinit var googleApiClient: GoogleApiClient
+    private var googleApiClient: GoogleApiClient? = null
     private lateinit var castApi: Cast.CastApi
     private lateinit var notificationManager: NotificationManager
     private var originalMute: Boolean? = null
     private var originalInterruptionFilter: Int? = null
+    private lateinit var adapter: ArrayAdapter<String>
+    private val devices: MutableMap<String, MediaRouter.RouteInfo> = mutableMapOf()
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        mediaRouter = MediaRouter.getInstance(this)
-        mediaRouter.addCallback(
-            MediaRouteSelector.Builder()
-                .addControlCategory(CastMediaControlIntent.categoryForCast(getString(R.string.cast_app_id)))
-                .build(),
-            callback,
-            MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN
-        )
-
         notificationManager = getSystemService(NotificationManager::class.java)
+        mediaRouter = MediaRouter.getInstance(this)
+
         button_dead_mans_switch.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -52,29 +47,30 @@ class MainActivity : AppCompatActivity() {
                         log("Unmuted")
                     }
                     originalInterruptionFilter?.let {
-                        notificationManager.setInterruptionFilter(it)
+                        if (notificationManager.currentInterruptionFilter != it) {
+                            notificationManager.setInterruptionFilter(it)
+                        }
                     }
 
-                    if (!castApi.isMute(googleApiClient)) {
-                        originalMute = castApi.isMute(googleApiClient)
-                        originalInterruptionFilter = notificationManager.currentInterruptionFilter
-                        log("Armed")
-                    }
+                    originalMute = castApi.isMute(googleApiClient)
+                    originalInterruptionFilter = notificationManager.currentInterruptionFilter
+                    log("Armed")
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     if (originalMute != null) {
                         castApi.setMute(googleApiClient, true)
-                        notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_NONE)
+                        if (notificationManager.currentInterruptionFilter != NotificationManager.INTERRUPTION_FILTER_PRIORITY) {
+                            notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+                        }
                         log("Muted")
                     }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (!isViewContains(
-                            button_dead_mans_switch,
-                            event.x.toInt(),
-                            event.y.toInt()
+                    if (!button_dead_mans_switch.contains(
+                            event.x,
+                            event.y
                         ) && originalMute != null
                     ) {
                         log("Canceled")
@@ -86,22 +82,52 @@ class MainActivity : AppCompatActivity() {
             }
             false
         }
-        log(Date().toLocaleString())
-        log("Searching for Living Room TV...\nMake sure you are connected to the same WiFi network")
-    }
+        adapter = ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line)
+        spinner_device_selector.adapter = adapter
+        spinner_device_selector.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: AdapterView<*>?) {
+                }
 
-    private fun isViewContains(view: View, rx: Int, ry: Int): Boolean {
-        return Rect().let {
-            view.getDrawingRect(it)
-            it.contains(rx, ry)
-        }
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    if (position > 0) {
+                        val deviceName = adapter.getItem(position)!!
+                        log("Connecting to $deviceName")
+                        setupGoogleApiClient(devices[deviceName]!!)
+                    } else {
+                        if (googleApiClient?.isConnected == true || googleApiClient?.isConnecting == true) {
+                            log("Disconnecting")
+                            button_dead_mans_switch.isEnabled = false
+                            googleApiClient?.disconnect()
+                            googleApiClient = null
+                        }
+                    }
+                }
+            }
+        adapter.add("Select a device")
+        clearlog()
+        startScanning()
+        button_dead_mans_switch.isEnabled = false
     }
 
     override fun onResume() {
         super.onResume()
+        log(Date().toLocaleString())
+    }
+
+    private fun startScanning() {
         // Check if the notification policy access has been granted for the app.
         if (!notificationManager.isNotificationPolicyAccessGranted) {
             Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply(::startActivity)
+        } else {
+            mediaRouter.addCallback(
+                MediaRouteSelector.Builder()
+                    .addControlCategory(CastMediaControlIntent.categoryForCast(getString(R.string.cast_app_id)))
+                    .build(),
+                callback,
+                MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN
+            )
+            log("Scanning for devices...")
         }
     }
 
@@ -115,62 +141,64 @@ class MainActivity : AppCompatActivity() {
         }
         if (::castApi.isInitialized) {
             castApi.leaveApplication(googleApiClient)
-            googleApiClient.disconnect()
+            googleApiClient?.disconnect()
         }
         super.onDestroy()
     }
 
     private var callback: MediaRouter.Callback = object : MediaRouter.Callback() {
         override fun onRouteAdded(router: MediaRouter, route: MediaRouter.RouteInfo) {
-            if (route.name == "Living Room TV") {
-                log("Living Room TV found")
-                setupGoogleApiClient(route)
+            if (!devices.containsKey(route.name)) {
+                adapter.add(route.name)
+                devices[route.name] = route
             }
         }
 
         override fun onRouteRemoved(router: MediaRouter, route: MediaRouter.RouteInfo) {
-            if (route.name == "Living Room TV") {
-                log("Living Room TV lost 1")
-                googleApiClient.disconnect()
-            }
+            adapter.remove(route.name)
+            devices.remove(route.name)
         }
 
         override fun onRouteChanged(router: MediaRouter, route: MediaRouter.RouteInfo) {
-
+            if (!devices.containsKey(route.name)) {
+                adapter.add(route.name)
+                devices[route.name] = route
+            }
         }
     }
 
     private fun setupGoogleApiClient(route: MediaRouter.RouteInfo) {
         val device = CastDevice.getFromBundle(route.extras)
 
+        googleApiClient?.disconnect()
         googleApiClient = GoogleApiClient.Builder(this@MainActivity)
             .addApi(Cast.API, Cast.CastOptions.Builder(device, Cast.Listener()).build())
             .addConnectionCallbacks(object : GoogleApiClient.ConnectionCallbacks {
                 override fun onConnected(bundle: Bundle?) {
-                    println("onConnected")
-                    log("Living Room TV connected")
+                    log("Connected")
                     button_dead_mans_switch.isEnabled = true
                     castApi = Cast.CastApi.zza()
                     castApi.joinApplication(googleApiClient)
                 }
 
                 override fun onConnectionSuspended(p0: Int) {
-                    println("onConnectionSuspended")
-                    log("Living Room TV lost 2")
+                    log("Connection suspended")
                     button_dead_mans_switch.isEnabled = false
                 }
             })
             .addOnConnectionFailedListener {
-                println(it)
-                log("Living Room TV lost 3")
-                button_dead_mans_switch.isEnabled = false
+                log("Connection failed")
+                spinner_device_selector.setSelection(0)
             }
-            .build()
-        googleApiClient.connect()
+            .build().also { it.connect() }
+    }
+
+    private fun clearlog() {
+        text_log.text = null
     }
 
     private fun log(text: String) {
-        label_cast_device.text =
-            text + label_cast_device.text.let { if (it.isNotBlank()) "\n$it" else "" }
+        text_log.text =
+            text + text_log.text.let { if (it.isNotBlank()) "\n$it" else "" }
     }
 }

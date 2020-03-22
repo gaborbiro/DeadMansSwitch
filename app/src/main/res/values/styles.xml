@@ -7,7 +7,7 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <style name="AudioStatusLabel" parent="TextAppearance.AppCompat.Title">
+    <style name="AudioStatusLabel" parent="TextAppearance.AppCompat.Body2">
 
     </style>
 </resources>
